@@ -1,14 +1,17 @@
 #!/usr/bin/env node
-// v0.2 — measure the always-on instruction block, log its size over time, and
-// report which rules were added since the last run.
-// Reports only. Never edits the target repo's instruction files.
+// v0.3 — measure the always-on instruction block, report which rules were added
+// since the last run, and gather what already enforces things into a dossier for
+// the contextlint skill to classify.
+// Reports only. Never edits the target repo's instruction files, and never
+// touches hooks.
 
-import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { join, dirname, resolve, relative } from 'node:path'
+import { homedir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 
-const DEFAULTS = { floorTokens: 1500, growthRules: 10, growthTokens: 300 }
+const DEFAULTS = { floorTokens: 1500, growthRules: 10, growthTokens: 300, aggressiveness: 'aggressive' }
 const IMPORT_LINE = /^\s*@([^\s@][^\s]*)\s*$/gm
 
 // chars/4 — the same rough estimate the proposal measures with. Under-counts
@@ -87,14 +90,20 @@ export function addedLines(dir, since, path) {
   return out
 }
 
-// Consecutive added lines inside one section become one candidate rule.
+// A list item or numbered item starts a rule of its own. Anything else is a
+// continuation of the one above it.
+const STARTS_RULE = /^\s*(?:[-*+]|\d+\.)\s/
+
+// Consecutive added lines inside one section become one candidate rule, except
+// where a new list item starts — three bullets in a row are three rules, and
+// merging them produces one candidate that belongs in three different buckets.
 function groupIntoRules(file, added, sections) {
   const rules = []
   for (const { line, text } of added) {
     if (NOISE.test(text)) continue
     const section = sections[line - 1] ?? ''
     const last = rules.at(-1)
-    if (last && last.section === section && line === last.endLine + 1) {
+    if (last && last.section === section && line === last.endLine + 1 && !STARTS_RULE.test(text)) {
       last.text += '\n' + text
       last.endLine = line
     } else {
@@ -152,6 +161,93 @@ export function measure(targetDir) {
   return { files, totalTokens: files.reduce((n, f) => n + f.tokens, 0) }
 }
 
+// ---------------------------------------------------------------- step 5
+// What already enforces things. Facts only — no judgement about whether any of
+// it actually covers a given rule. That call belongs to the skill.
+
+// Hooks are code that can block work, so contextlint reads them and never
+// writes them. Matchers are reported verbatim: a matcher that looks like it
+// covers a rule may not fire in practice, and the skill must say so.
+export function readHooks(targetDir) {
+  const settings = readJson(join(targetDir, '.claude', 'settings.json'), {})
+  const hooks = []
+  for (const [event, entries] of Object.entries(settings.hooks ?? {})) {
+    for (const entry of entries) {
+      hooks.push({
+        event,
+        matcher: entry.matcher ?? '*',
+        commands: (entry.hooks ?? []).map((h) => h.command).filter(Boolean),
+      })
+    }
+  }
+  return { hooks, deny: settings.permissions?.deny ?? [] }
+}
+
+const frontmatter = (text) => {
+  const m = /^---\n([\s\S]*?)\n---/.exec(text)
+  if (!m) return {}
+  const out = {}
+  // Enough YAML for `name:` and a folded `description: >`. Skills that need
+  // more than that are read in full by the skill, not parsed here.
+  for (const [, key, inline, block] of m[1].matchAll(/^(\w+):[ \t]*(?:>-?\s*\n((?:[ \t]+.*\n?)*)|(.*))$/gm)) {
+    out[key] = (inline ?? block ?? '').replace(/\s+/g, ' ').trim()
+  }
+  return out
+}
+
+const dirsIn = (path) => {
+  try { return readdirSync(path, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name) } catch { return [] }
+}
+
+// Plugins send instructions too, and contextlint can read them but never change
+// them — which is why a rule a plugin covers gets moved, not deleted.
+export function readPlugins(targetDir, configDir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')) {
+  const enabled = readJson(join(targetDir, '.claude', 'settings.json'), {}).enabledPlugins ?? {}
+  const installed = readJson(join(configDir, 'plugins', 'installed_plugins.json'), {}).plugins ?? {}
+
+  return Object.entries(enabled)
+    .filter(([id, on]) => on && id.includes('@'))
+    .map(([id]) => {
+      // A plugin can have several install entries — an auto-update leaves the
+      // old one in place. The live one is the most recently updated entry whose
+      // directory still exists; taking the first silently records a stale
+      // version, which makes every "covered by X v.Y" note unverifiable.
+      const entries = [...(installed[id] ?? [])].sort(
+        (a, b) => String(b.lastUpdated ?? '').localeCompare(String(a.lastUpdated ?? ''))
+      )
+      const install = entries.find((e) => e.installPath && existsSync(e.installPath))
+      const path = install?.installPath
+      if (!path) return { id, version: entries[0]?.version ?? null, path: entries[0]?.installPath ?? null, missing: true }
+
+      const skills = dirsIn(join(path, 'skills')).flatMap((name) => {
+        const file = join(path, 'skills', name, 'SKILL.md')
+        if (!existsSync(file)) return []
+        const { description = '' } = frontmatter(readFileSync(file, 'utf8'))
+        return [{ name, description, path: file }]
+      })
+
+      return {
+        id,
+        version: install.version ?? null,
+        path,
+        // Root-level instruction files are the plugin's always-on half.
+        instructionFiles: ['CLAUDE.md', 'AGENTS.md'].filter((f) => existsSync(join(path, f))),
+        skills,
+      }
+    })
+}
+
+// ---------------------------------------------------------------- step 6
+// A rule the user has already rejected must not come back every week.
+export const ruleKey = (r) => `${r.file}:${r.section}:${hash(r.text)}`
+
+export function writeDossier(stateDir, targetDir, body) {
+  const path = join(stateDir, 'dossier.json')
+  mkdirSync(stateDir, { recursive: true })
+  writeFileSync(path, JSON.stringify(body, null, 2) + '\n')
+  return path
+}
+
 function main(targetDir) {
   if (!existsSync(join(targetDir, 'CLAUDE.md'))) {
     console.error(`no CLAUDE.md in ${targetDir} — nothing to measure`)
@@ -180,9 +276,15 @@ function main(targetDir) {
 
   // Under the floor, a small instruction block is not a problem worth a tool.
   const underFloor = totalTokens < config.floorTokens
-  const { mode, rules, changedWithoutHistory } = underFloor
+  const found = underFloor
     ? { mode: 'skipped', rules: [], changedWithoutHistory: [] }
     : findCandidates(targetDir, files, previous)
+
+  // Rules the user has already declined to move stay declined.
+  const ignored = new Set(readJson(join(stateDir, 'ignore.json'), []).map((e) => e.rule ?? e))
+  const { mode, changedWithoutHistory } = found
+  const rules = found.rules.filter((r) => !ignored.has(ruleKey(r)))
+  const skipped = found.rules.length - rules.length
 
   record(stateDir, logPath, log, { totalTokens, files, rules })
 
@@ -200,16 +302,33 @@ function main(targetDir) {
     for (const r of rules) printRule(r)
   }
 
+  if (skipped) console.log(`  (${skipped} previously declined — see .contextlint/ignore.json)`)
+
   for (const path of changedWithoutHistory) {
     console.log(`  ${path} changed, but git has no history for it — contents not shown.`)
   }
 
   const grew = rules.length >= config.growthRules || tokenDelta >= config.growthTokens
-  console.log(
-    mode === 'full' || grew
-      ? '\nWorth a look. Classification is v0.3.'
-      : '\nBelow the growth threshold. Nothing to do.'
-  )
+  if (!(mode === 'full' || grew)) {
+    console.log('\nBelow the growth threshold. Nothing to do.')
+    return
+  }
+
+  const dossier = writeDossier(stateDir, targetDir, {
+    generatedAt: new Date().toISOString(),
+    target: targetDir,
+    commit: headCommit(targetDir),
+    config,
+    measurement: { totalTokens, tokenDelta, files: files.map(({ text, ...f }) => f) },
+    mode,
+    candidates: rules.map((r) => ({ key: ruleKey(r), ...r })),
+    changedWithoutHistory,
+    ...readHooks(targetDir),
+    plugins: readPlugins(targetDir),
+  })
+
+  console.log(`\nWorth a look. Dossier: ${relative(targetDir, dossier)}`)
+  console.log('Run the contextlint skill to classify these rules.')
 }
 
 function printRule(r) {
