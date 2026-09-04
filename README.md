@@ -16,24 +16,37 @@ It **proposes**. It never edits your instruction files, and it never touches hoo
 
 ## Use
 
+Installed as a plugin, it runs on its own: a SessionStart hook runs it once every
+24 hours, and **it prints nothing unless there is something to act on**. When
+there is, one line appears:
+
 ```
-node bin/contextlint.js /path/to/repo
+contextlint: 10 new rules in the always-on block (5384 tokens). Run /contextlint to classify.
 ```
 
-Defaults to the current directory. Writes `.contextlint/log.json` in the target
-repo — add `.contextlint/` to that repo's `.gitignore`.
+`/contextlint` then runs the script and classifies what it finds.
 
-## Status — v0.3
+Directly, without the plugin:
 
-Measure, log, report which rules were added since the last run, and gather the
-context needed to classify them.
+```
+node bin/contextlint.js /path/to/repo     # measure and report
+node bin/contextlint.js --if-due          # what the hook runs: silent unless due and actionable
+```
+
+Defaults to the current directory. Writes `.contextlint/` in the target repo —
+add it to that repo's `.gitignore`.
+
+## Status — v0.4
+
+Complete. Runs itself once a day from a SessionStart hook, or on demand with
+`/contextlint`.
 
 | Version | What it adds |
 |---------|--------------|
 | v0.1 | Resolve the always-on block, measure it, log it, check the floor |
 | v0.2 | Report which rules were added since the last run (`git diff`) |
-| **v0.3** | Classify each new rule: hook / skill / knowledge / keep |
-| v0.4 | SessionStart trigger and slash command |
+| v0.3 | Classify each new rule: hook / skill / knowledge / keep |
+| **v0.4** | SessionStart trigger and `/contextlint` |
 
 Each version is useful on its own.
 
@@ -75,6 +88,15 @@ same tokens and keeps a copy you can put back.
 A proposal you decline goes in `.contextlint/ignore.json` as
 `[{ "rule": "<key from dossier candidates[].key>", "reason": "..." }]` and is not
 raised again.
+
+## Why the hook is silent
+
+Hook *definitions* never enter the context. Hook *output* does, on every session
+that fires it. A hook that prints on success is a small permanent tax — the same
+kind of waste contextlint exists to find, in a different file. So `--if-due`
+returns without printing when the interval has not elapsed, when the block is
+under the floor, when nothing was added, and in any repo with no `CLAUDE.md` at
+all. Four tests hold it to that.
 
 ## Design
 

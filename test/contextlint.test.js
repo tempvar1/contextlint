@@ -4,7 +4,10 @@ import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { measure, estimateTokens, sectionsByLine, findCandidates, readHooks, readPlugins, ruleKey } from '../bin/contextlint.js'
+import { fileURLToPath } from 'node:url'
+import { measure, estimateTokens, sectionsByLine, findCandidates, readHooks, readPlugins, ruleKey, isDue } from '../bin/contextlint.js'
+
+const BIN = fileURLToPath(new URL('../bin/contextlint.js', import.meta.url))
 
 test('measure follows nested @-imports and skips cycles', () => {
   const dir = mkdtempSync(join(tmpdir(), 'contextlint-'))
@@ -128,4 +131,41 @@ test('readPlugins picks the live install, not the stale one an auto-update left 
   writeFileSync(join(dir, '.claude/settings.json'), JSON.stringify({ enabledPlugins: { 'plug@market': true } }))
 
   assert.equal(readPlugins(dir, cfg)[0].version, '4.9.0')
+})
+
+test('isDue is false until the configured interval has passed', () => {
+  const config = { minHoursBetweenRuns: 24 }
+  const now = Date.parse('2026-09-04T12:00:00Z')
+
+  assert.equal(isDue([], config, now), true, 'no previous run')
+  assert.equal(isDue([{ date: '2026-09-04T02:00:00Z' }], config, now), false, '10h ago')
+  assert.equal(isDue([{ date: '2026-09-03T11:00:00Z' }], config, now), true, '25h ago')
+})
+
+test('--if-due prints nothing at all when there is nothing to act on', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'contextlint-'))
+  writeFileSync(join(dir, 'CLAUDE.md'), '# Tiny\n\n- one rule\n')
+
+  const out = execFileSync('node', [BIN, dir, '--if-due'], { encoding: 'utf8' })
+
+  assert.equal(out, '', 'a hook that greets you every session is the waste this tool exists to find')
+})
+
+test('--if-due prints nothing in a repo that has no CLAUDE.md', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'contextlint-'))
+
+  const out = execFileSync('node', [BIN, dir, '--if-due'], { encoding: 'utf8' })
+
+  assert.equal(out, '')
+})
+
+test('--if-due stays silent on a second run inside the interval', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'contextlint-'))
+  writeFileSync(join(dir, 'CLAUDE.md'), '# Rules\n\n' + Array.from({ length: 120 }, (_, i) => `- rule ${i}: padded out with enough words to carry this fixture clear of the 1,500-token floor`).join('\n'))
+
+  const first = execFileSync('node', [BIN, dir, '--if-due'], { encoding: 'utf8' })
+  const second = execFileSync('node', [BIN, dir, '--if-due'], { encoding: 'utf8' })
+
+  assert.match(first, /^contextlint: \d+ new rules? in the always-on block/, 'first run is over the floor and has no history, so it reports')
+  assert.equal(second, '', 'second run is inside the 24h interval')
 })

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// v0.3 — measure the always-on instruction block, report which rules were added
+// v0.4 — measure the always-on instruction block, report which rules were added
 // since the last run, and gather what already enforces things into a dossier for
-// the contextlint skill to classify.
+// the contextlint skill to classify. Runs from a SessionStart hook with
+// --if-due, where it stays completely silent unless there is something to say.
 // Reports only. Never edits the target repo's instruction files, and never
 // touches hooks.
 
@@ -9,9 +10,16 @@ import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync } from 
 import { createHash } from 'node:crypto'
 import { join, dirname, resolve, relative } from 'node:path'
 import { homedir } from 'node:os'
+import { parseArgs } from 'node:util'
 import { execFileSync } from 'node:child_process'
 
-const DEFAULTS = { floorTokens: 1500, growthRules: 10, growthTokens: 300, aggressiveness: 'aggressive' }
+const DEFAULTS = {
+  floorTokens: 1500,
+  growthRules: 10,
+  growthTokens: 300,
+  aggressiveness: 'aggressive',
+  minHoursBetweenRuns: 24,
+}
 const IMPORT_LINE = /^\s*@([^\s@][^\s]*)\s*$/gm
 
 // chars/4 — the same rough estimate the proposal measures with. Under-counts
@@ -248,8 +256,24 @@ export function writeDossier(stateDir, targetDir, body) {
   return path
 }
 
-function main(targetDir) {
+// Hook output is the one place a hook costs tokens, and it costs them on every
+// session. So in quiet mode contextlint prints nothing at all unless there is
+// something worth acting on. A linter that greets you every morning is the
+// waste it exists to find.
+export const hoursSince = (iso, now) => (now - Date.parse(iso)) / 3_600_000
+
+export function isDue(log, config, now = Date.now()) {
+  const previous = log.at(-1)
+  return !previous || hoursSince(previous.date, now) >= config.minHoursBetweenRuns
+}
+
+function main(targetDir, { quiet = false, ifDue = false } = {}) {
+  const say = quiet ? () => {} : console.log
+
   if (!existsSync(join(targetDir, 'CLAUDE.md'))) {
+    // Nothing to measure is normal for most repos, and the hook runs in all of
+    // them. Only say so when a person asked directly.
+    if (quiet) return
     console.error(`no CLAUDE.md in ${targetDir} — nothing to measure`)
     process.exit(1)
   }
@@ -260,18 +284,20 @@ function main(targetDir) {
   const log = readJson(logPath, [])
   const previous = log.at(-1)
 
+  if (ifDue && !isDue(log, config)) return
+
   const { files, totalTokens } = measure(targetDir)
 
   const width = Math.max(...files.map((f) => f.path.length))
   for (const f of files) {
-    console.log(`  ${f.path.padEnd(width)}  ${String(f.lines).padStart(5)} lines  ${String(f.tokens).padStart(6)} tokens`)
+    say(`  ${f.path.padEnd(width)}  ${String(f.lines).padStart(5)} lines  ${String(f.tokens).padStart(6)} tokens`)
   }
-  console.log(`  ${''.padEnd(width, '-')}  ${''.padStart(5, '-')}        ${''.padStart(6, '-')}`)
-  console.log(`  ${'total'.padEnd(width)}  ${String(files.reduce((n, f) => n + f.lines, 0)).padStart(5)} lines  ${String(totalTokens).padStart(6)} tokens`)
+  say(`  ${''.padEnd(width, '-')}  ${''.padStart(5, '-')}        ${''.padStart(6, '-')}`)
+  say(`  ${'total'.padEnd(width)}  ${String(files.reduce((n, f) => n + f.lines, 0)).padStart(5)} lines  ${String(totalTokens).padStart(6)} tokens`)
 
   const tokenDelta = previous ? totalTokens - previous.totalTokens : totalTokens
   if (previous) {
-    console.log(`\n  since ${previous.date.slice(0, 10)}: ${tokenDelta >= 0 ? '+' : ''}${tokenDelta} tokens`)
+    say(`\n  since ${previous.date.slice(0, 10)}: ${tokenDelta >= 0 ? '+' : ''}${tokenDelta} tokens`)
   }
 
   // Under the floor, a small instruction block is not a problem worth a tool.
@@ -289,28 +315,28 @@ function main(targetDir) {
   record(stateDir, logPath, log, { totalTokens, files, rules })
 
   if (underFloor) {
-    console.log(`\nUnder the ${config.floorTokens}-token floor. Nothing to do.`)
+    say(`\nUnder the ${config.floorTokens}-token floor. Nothing to do.`)
     return
   }
 
   if (mode === 'full') {
-    console.log(`\nNo previous run to diff against — full audit: ${rules.length} rules in the always-on block.`)
+    say(`\nNo previous run to diff against — full audit: ${rules.length} rules in the always-on block.`)
   } else if (rules.length === 0) {
-    console.log('\nNo rules added since the last run.')
+    say('\nNo rules added since the last run.')
   } else {
-    console.log(`\n${rules.length} rule${rules.length === 1 ? '' : 's'} added since the last run:\n`)
-    for (const r of rules) printRule(r)
+    say(`\n${rules.length} rule${rules.length === 1 ? '' : 's'} added since the last run:\n`)
+    if (!quiet) for (const r of rules) printRule(r)
   }
 
-  if (skipped) console.log(`  (${skipped} previously declined — see .contextlint/ignore.json)`)
+  if (skipped) say(`  (${skipped} previously declined — see .contextlint/ignore.json)`)
 
   for (const path of changedWithoutHistory) {
-    console.log(`  ${path} changed, but git has no history for it — contents not shown.`)
+    say(`  ${path} changed, but git has no history for it — contents not shown.`)
   }
 
   const grew = rules.length >= config.growthRules || tokenDelta >= config.growthTokens
   if (!(mode === 'full' || grew)) {
-    console.log('\nBelow the growth threshold. Nothing to do.')
+    say('\nBelow the growth threshold. Nothing to do.')
     return
   }
 
@@ -327,8 +353,11 @@ function main(targetDir) {
     plugins: readPlugins(targetDir),
   })
 
-  console.log(`\nWorth a look. Dossier: ${relative(targetDir, dossier)}`)
-  console.log('Run the contextlint skill to classify these rules.')
+  console.log(
+    quiet
+      ? `contextlint: ${rules.length} new rule${rules.length === 1 ? '' : 's'} in the always-on block (${totalTokens} tokens). Run /contextlint to classify.`
+      : `\nWorth a look. Dossier: ${relative(targetDir, dossier)}\nRun the contextlint skill to classify these rules.`
+  )
 }
 
 function printRule(r) {
@@ -351,4 +380,11 @@ function record(stateDir, logPath, log, { totalTokens, files, rules }) {
   writeFileSync(logPath, JSON.stringify(log, null, 2) + '\n')
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main(resolve(process.argv[2] ?? process.cwd()))
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const { values, positionals } = parseArgs({
+    options: { quiet: { type: 'boolean' }, 'if-due': { type: 'boolean' } },
+    allowPositionals: true,
+  })
+  const ifDue = values['if-due'] ?? false
+  main(resolve(positionals[0] ?? process.cwd()), { quiet: values.quiet || ifDue, ifDue })
+}

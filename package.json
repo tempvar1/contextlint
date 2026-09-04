@@ -1,9 +1,13 @@
 {
   "name": "contextlint",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Keeps a project's always-on Claude instructions from growing without bound",
   "type": "module",
-  "bin": { "contextlint": "bin/contextlint.js" },
-  "scripts": { "test": "node --test" },
+  "bin": {
+    "contextlint": "bin/contextlint.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
   "license": "MIT"
 }

@@ -11,9 +11,9 @@ description: >
 
 # contextlint — classifying rules
 
-`bin/contextlint.js` has already done the mechanical half and written a dossier.
-Your job is the half a script cannot do: decide where each rule it found should
-actually live.
+`bin/contextlint.js` does the mechanical half and writes a dossier. Your job is
+the half a script cannot do: decide where each rule it found should actually
+live.
 
 ## The principle
 
@@ -38,14 +38,24 @@ Always-on is the last resort, not the default.
 
 ## Steps
 
-1. **Read the dossier.** Default path `.contextlint/dossier.json` in the target
-   repo; the script prints the exact path. It holds the candidate rules, the
-   hook inventory, the deny list, and every enabled plugin with its version and
-   skill descriptions.
-2. **Read the always-on files themselves** — the dossier lists their paths, not
+1. **Run the script first**, from the repo you are auditing:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/bin/contextlint.js"
+   ```
+
+   It measures, diffs against the last run, and — if anything is over the
+   threshold — writes the dossier and prints its path. If it says there is
+   nothing to do, say so and stop. Do not classify a stale dossier from a
+   previous run.
+
+2. **Read the dossier.** `.contextlint/dossier.json` in the target repo. It holds
+   the candidate rules, the hook inventory, the deny list, and every enabled
+   plugin with its version and skill descriptions.
+3. **Read the always-on files themselves** — the dossier lists their paths, not
    their text. You need the surrounding context to judge a rule fairly.
-3. **Classify each candidate** into exactly one bucket (below).
-4. **Write the report** to `.contextlint/report.md`. Nothing else.
+4. **Classify each candidate** into exactly one bucket (below).
+5. **Write the report** to `.contextlint/report.md`. Nothing else.
 
 ## The buckets
 
@@ -105,7 +115,10 @@ touch. They pull in opposite directions.
 
 **6. Never add to the always-on block.** Your report, and everything else
 contextlint produces, lives in `.contextlint/`, which nothing loads. A linter
-that adds weight to the thing it is measuring has failed.
+that adds weight to the thing it is measuring has failed. The same applies to
+the SessionStart hook: it prints nothing at all unless there is something to
+act on, because hook output is the one part of a hook that costs tokens — and
+it costs them every session.
 
 ## Your blind spot, and say so in the report
 

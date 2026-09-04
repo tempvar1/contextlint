@@ -1,5 +1,5 @@
 {
   "name": "contextlint",
-  "version": "0.3.0",
-  "description": "Measures the always-on instruction block and reports the rules added since the last run"
+  "version": "0.4.0",
+  "description": "Keeps a project's always-on Claude instructions from growing without bound - measures, detects new rules, proposes where each belongs"
 }
