@@ -1,0 +1,27 @@
+.claude-plugin/plugin.json
+  s_c9f63d2b12b630::t_f4010f0ee0b82e 3-4
+README.md
+  s_c9f63d2b12b630::t_6d4384fcb5dc66 26,28,32-33
+bin/contextlint.js
+  s_c9f63d2b12b630::t_b060edf385dce5 2-3,7,11,46-140,146,150,167,176,178-200,203-207,209-211,215-234
+package.json
+  s_c9f63d2b12b630::t_83a16440fb33e4 3
+test/contextlint.test.js
+  s_c9f63d2b12b630::t_0d72aa1387914f 6-7,21-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "73277691c8ded78e5a60f3e183cfde61ccfa6171",
+  "prompts": {},
+  "sessions": {
+    "s_c9f63d2b12b630": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "028e6e53-f798-489d-915c-e1636fe1576c",
+        "model": "claude-opus-5"
+      },
+      "human_author": "tempvar1 <33154435+tempvar1@users.noreply.github.com>"
+    }
+  }
+}
