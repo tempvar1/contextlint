@@ -3,10 +3,10 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { measure, estimateTokens } from '../bin/cleanup.js'
+import { measure, estimateTokens } from '../bin/contextlint.js'
 
 test('measure follows nested @-imports and skips cycles', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'cleanup-'))
+  const dir = mkdtempSync(join(tmpdir(), 'contextlint-'))
   mkdirSync(join(dir, 'rules'))
   writeFileSync(join(dir, 'CLAUDE.md'), 'root\n@rules/a.md\n')
   writeFileSync(join(dir, 'rules/a.md'), 'a\n@b.md\n')

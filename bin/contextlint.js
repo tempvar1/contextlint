@@ -63,7 +63,7 @@ function main(targetDir) {
     process.exit(1)
   }
 
-  const stateDir = join(targetDir, '.cleanup-bot')
+  const stateDir = join(targetDir, '.contextlint')
   const config = { ...DEFAULTS, ...readJson(join(stateDir, 'config.json'), {}) }
   const logPath = join(stateDir, 'log.json')
   const log = readJson(logPath, [])

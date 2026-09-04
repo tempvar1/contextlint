@@ -1,5 +1,5 @@
 {
-  "name": "cleanup-bot",
+  "name": "contextlint",
   "version": "0.1.0",
   "description": "Measures the always-on instruction block and reports when it should be trimmed"
 }

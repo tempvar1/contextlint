@@ -1,4 +1,4 @@
-# cleanup-bot
+# contextlint
 
 Keeps a project's **always-on** Claude instructions from growing without bound.
 
@@ -17,11 +17,11 @@ It **proposes**. It never edits your instruction files, and it never touches hoo
 ## Use
 
 ```
-node bin/cleanup.js /path/to/repo
+node bin/contextlint.js /path/to/repo
 ```
 
-Defaults to the current directory. Writes `.cleanup-bot/log.json` in the target
-repo — add `.cleanup-bot/` to that repo's `.gitignore`.
+Defaults to the current directory. Writes `.contextlint/log.json` in the target
+repo — add `.contextlint/` to that repo's `.gitignore`.
 
 ## Status — v0.1
 
@@ -38,7 +38,7 @@ Each version is useful on its own.
 
 ## Config
 
-`.cleanup-bot/config.json` in the target repo, all keys optional:
+`.contextlint/config.json` in the target repo, all keys optional:
 
 ```json
 { "floorTokens": 1500 }
@@ -49,7 +49,7 @@ problem worth a tool.
 
 ## Design
 
-`bin/cleanup.js` does the mechanical half: resolve, measure, diff, gather. It is
+`bin/contextlint.js` does the mechanical half: resolve, measure, diff, gather. It is
 deterministic, dependency-free, and never calls a model. From v0.3 a skill reads
 its output and makes the judgement calls. That split is deliberate — the cheap
 half runs every day, the expensive half only when there is something to judge.
