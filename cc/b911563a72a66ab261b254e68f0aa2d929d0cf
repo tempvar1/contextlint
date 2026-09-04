@@ -1,0 +1,31 @@
+.claude-plugin/plugin.json
+  s_c9f63d2b12b630::t_77fb60f892ae15 3-4
+README.md
+  s_c9f63d2b12b630::t_14aefa7c0f1188 19-30,32-33,36-37,39,41-42,48-49,92-100
+bin/contextlint.js
+  s_c9f63d2b12b630::t_a27598ae8f8f5b 2,4-5,13,16-22,259-272,274-276,287-288,293,295-296,300,318,323,325,327-328,331,334,339,356-360,383-390
+hooks/hooks.json
+  s_c9f63d2b12b630::t_ff04c8e085dd1b 1-16
+package.json
+  s_c9f63d2b12b630::t_e74a4502a39c6a 3,6-11
+skills/contextlint/SKILL.md
+  s_c9f63d2b12b630::t_32155215a0d252 14-16,41-55,57-58,118-121
+test/contextlint.test.js
+  s_c9f63d2b12b630::t_8c3ab0e62ef142 7-10,135-171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "ccb911563a72a66ab261b254e68f0aa2d929d0cf",
+  "prompts": {},
+  "sessions": {
+    "s_c9f63d2b12b630": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "028e6e53-f798-489d-915c-e1636fe1576c",
+        "model": "claude-opus-5"
+      },
+      "human_author": "tempvar1 <33154435+tempvar1@users.noreply.github.com>"
+    }
+  }
+}
