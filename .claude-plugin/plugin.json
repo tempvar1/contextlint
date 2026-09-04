@@ -1,5 +1,5 @@
 {
   "name": "contextlint",
-  "version": "0.1.0",
-  "description": "Measures the always-on instruction block and reports when it should be trimmed"
+  "version": "0.2.0",
+  "description": "Measures the always-on instruction block and reports the rules added since the last run"
 }

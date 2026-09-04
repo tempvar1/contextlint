@@ -23,14 +23,14 @@ node bin/contextlint.js /path/to/repo
 Defaults to the current directory. Writes `.contextlint/log.json` in the target
 repo — add `.contextlint/` to that repo's `.gitignore`.
 
-## Status — v0.1
+## Status — v0.2
 
-Measure and log only.
+Measure, log, and report which rules were added since the last run.
 
 | Version | What it adds |
 |---------|--------------|
-| **v0.1** | Resolve the always-on block, measure it, log it, check the floor |
-| v0.2 | Report which rules were added since the last run (`git diff`) |
+| v0.1 | Resolve the always-on block, measure it, log it, check the floor |
+| **v0.2** | Report which rules were added since the last run (`git diff`) |
 | v0.3 | Classify each new rule: hook / skill / knowledge / keep |
 | v0.4 | SessionStart trigger and slash command |
 
