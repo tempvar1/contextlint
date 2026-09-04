@@ -1,0 +1,9 @@
+{
+  "name": "cleanup-bot",
+  "version": "0.1.0",
+  "description": "Keeps a project's always-on Claude instructions from growing without bound",
+  "type": "module",
+  "bin": { "cleanup-bot": "bin/cleanup.js" },
+  "scripts": { "test": "node --test" },
+  "license": "MIT"
+}
