@@ -1,0 +1,29 @@
+.claude-plugin/plugin.json
+  s_d910cd99937c1b::t_a3b08c4d7841b5 1-5
+.gitignore
+  s_d910cd99937c1b::t_3b08ea20ca4618 1-2
+README.md
+  s_d910cd99937c1b::t_c5ce68f59f0d0c 1-58
+bin/cleanup.js
+  s_d910cd99937c1b::t_bb18036ee4e10b 1-102
+package.json
+  s_d910cd99937c1b::t_9079cf1db541e8 1-9
+test/cleanup.test.js
+  s_d910cd99937c1b::t_ba7a66225c2857 1-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "08f0773bd8f582801dcaf5bb29880309d4b30325",
+  "prompts": {},
+  "sessions": {
+    "s_d910cd99937c1b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "df98e4cc-b0f4-4a2b-ad3a-26dc0c4e55fd",
+        "model": "claude-opus-5"
+      },
+      "human_author": "tempvar1 <33154435+tempvar1@users.noreply.github.com>"
+    }
+  }
+}
