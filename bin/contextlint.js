@@ -173,11 +173,42 @@ export function measure(targetDir) {
 // What already enforces things. Facts only — no judgement about whether any of
 // it actually covers a given rule. That call belongs to the skill.
 
+export const userConfigDir = () => process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')
+
+// Settings live in three files, and what is in force is the merge of all of
+// them. `claude plugin install` defaults to user scope, so reading only the
+// project file reports zero plugins in almost every repo — and a hook defined
+// at user level is enforcing things just as much as a project one.
+//
+// Merge semantics differ per key and matter: enabledPlugins is an object where
+// the narrower scope wins, while hooks and deny rules accumulate — a user hook
+// and a project hook both fire.
+export function readSettings(targetDir, configDir = userConfigDir()) {
+  const sources = [
+    join(configDir, 'settings.json'),
+    join(targetDir, '.claude', 'settings.json'),
+    join(targetDir, '.claude', 'settings.local.json'),
+  ].map((f) => ({ file: f, json: readJson(f, null) }))
+
+  const merged = { enabledPlugins: {}, hooks: {}, deny: [] }
+  for (const { json } of sources) {
+    if (!json) continue
+    Object.assign(merged.enabledPlugins, json.enabledPlugins ?? {})
+    for (const [event, entries] of Object.entries(json.hooks ?? {})) {
+      merged.hooks[event] = [...(merged.hooks[event] ?? []), ...entries]
+    }
+    merged.deny.push(...(json.permissions?.deny ?? []))
+  }
+  merged.deny = [...new Set(merged.deny)]
+  merged.sources = sources.filter((s) => s.json).map((s) => s.file)
+  return merged
+}
+
 // Hooks are code that can block work, so contextlint reads them and never
 // writes them. Matchers are reported verbatim: a matcher that looks like it
 // covers a rule may not fire in practice, and the skill must say so.
-export function readHooks(targetDir) {
-  const settings = readJson(join(targetDir, '.claude', 'settings.json'), {})
+export function readHooks(targetDir, configDir = userConfigDir()) {
+  const settings = readSettings(targetDir, configDir)
   const hooks = []
   for (const [event, entries] of Object.entries(settings.hooks ?? {})) {
     for (const entry of entries) {
@@ -188,7 +219,7 @@ export function readHooks(targetDir) {
       })
     }
   }
-  return { hooks, deny: settings.permissions?.deny ?? [] }
+  return { hooks, deny: settings.deny, settingsSources: settings.sources }
 }
 
 const frontmatter = (text) => {
@@ -209,8 +240,8 @@ const dirsIn = (path) => {
 
 // Plugins send instructions too, and contextlint can read them but never change
 // them — which is why a rule a plugin covers gets moved, not deleted.
-export function readPlugins(targetDir, configDir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')) {
-  const enabled = readJson(join(targetDir, '.claude', 'settings.json'), {}).enabledPlugins ?? {}
+export function readPlugins(targetDir, configDir = userConfigDir()) {
+  const enabled = readSettings(targetDir, configDir).enabledPlugins
   const installed = readJson(join(configDir, 'plugins', 'installed_plugins.json'), {}).plugins ?? {}
 
   return Object.entries(enabled)
@@ -249,9 +280,17 @@ export function readPlugins(targetDir, configDir = process.env.CLAUDE_CONFIG_DIR
 // A rule the user has already rejected must not come back every week.
 export const ruleKey = (r) => `${r.file}:${r.section}:${hash(r.text)}`
 
-export function writeDossier(stateDir, targetDir, body) {
-  const path = join(stateDir, 'dossier.json')
+// Everything contextlint writes is local state. It ignores itself rather than
+// asking the user to remember a .gitignore line for it.
+export function ensureStateDir(stateDir) {
+  const fresh = !existsSync(stateDir)
   mkdirSync(stateDir, { recursive: true })
+  if (fresh) writeFileSync(join(stateDir, '.gitignore'), '*\n')
+  return stateDir
+}
+
+export function writeDossier(stateDir, targetDir, body) {
+  const path = join(ensureStateDir(stateDir), 'dossier.json')
   writeFileSync(path, JSON.stringify(body, null, 2) + '\n')
   return path
 }
@@ -312,12 +351,15 @@ function main(targetDir, { quiet = false, ifDue = false } = {}) {
   const rules = found.rules.filter((r) => !ignored.has(ruleKey(r)))
   const skipped = found.rules.length - rules.length
 
-  record(stateDir, logPath, log, { totalTokens, files, rules })
-
+  // Under the floor contextlint writes nothing at all, not even a log entry.
+  // The hook fires in every repo, and a tool whose whole point is to stay out
+  // of the way must not leave a directory behind to prove it ran.
   if (underFloor) {
     say(`\nUnder the ${config.floorTokens}-token floor. Nothing to do.`)
     return
   }
+
+  record(stateDir, logPath, log, { totalTokens, files, rules })
 
   if (mode === 'full') {
     say(`\nNo previous run to diff against — full audit: ${rules.length} rules in the always-on block.`)
@@ -340,6 +382,18 @@ function main(targetDir, { quiet = false, ifDue = false } = {}) {
     return
   }
 
+  const plugins = readPlugins(targetDir)
+  const hooks = readHooks(targetDir)
+
+  // An empty inventory is not evidence that nothing is covered. Say so out
+  // loud, or the skill reads "no plugins" as "no plugin covers this rule" and
+  // the MOVE — plugin bucket silently never fires.
+  const inventoryGaps = [
+    plugins.length === 0 && 'no enabled plugins resolved — nothing can be classified as covered by a plugin',
+    plugins.some((p) => p.missing) && `enabled but not installed: ${plugins.filter((p) => p.missing).map((p) => p.id).join(', ')}`,
+    hooks.hooks.length === 0 && 'no hooks found — nothing can be classified as already enforced',
+  ].filter(Boolean)
+
   const dossier = writeDossier(stateDir, targetDir, {
     generatedAt: new Date().toISOString(),
     target: targetDir,
@@ -349,9 +403,12 @@ function main(targetDir, { quiet = false, ifDue = false } = {}) {
     mode,
     candidates: rules.map((r) => ({ key: ruleKey(r), ...r })),
     changedWithoutHistory,
-    ...readHooks(targetDir),
-    plugins: readPlugins(targetDir),
+    ...hooks,
+    plugins,
+    inventoryGaps,
   })
+
+  for (const gap of inventoryGaps) say(`  warning: ${gap}`)
 
   console.log(
     quiet
@@ -369,7 +426,7 @@ function printRule(r) {
 
 // The log holds facts, not file contents — text stays out of it.
 function record(stateDir, logPath, log, { totalTokens, files, rules }) {
-  mkdirSync(stateDir, { recursive: true })
+  ensureStateDir(stateDir)
   log.push({
     date: new Date().toISOString(),
     commit: headCommit(dirname(stateDir)),

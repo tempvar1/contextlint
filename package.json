@@ -1,6 +1,6 @@
 {
   "name": "contextlint",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Keeps a project's always-on Claude instructions from growing without bound",
   "type": "module",
   "bin": {
@@ -9,5 +9,8 @@
   "scripts": {
     "test": "node --test"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.3"
+  }
 }

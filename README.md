@@ -14,6 +14,16 @@ genuinely always-on.
 
 It **proposes**. It never edits your instruction files, and it never touches hooks.
 
+## Install
+
+```bash
+claude plugin marketplace add tempvar1/contextlint
+claude plugin install contextlint@contextlint
+```
+
+`claude plugin install` defaults to user scope, so it applies to every project
+you open. The SessionStart hook then runs it once a day per repo.
+
 ## Use
 
 Installed as a plugin, it runs on its own: a SessionStart hook runs it once every
@@ -33,10 +43,12 @@ node bin/contextlint.js /path/to/repo     # measure and report
 node bin/contextlint.js --if-due          # what the hook runs: silent unless due and actionable
 ```
 
-Defaults to the current directory. Writes `.contextlint/` in the target repo —
-add it to that repo's `.gitignore`.
+Defaults to the current directory. Writes `.contextlint/` in the target repo,
+which ignores itself — the directory is created with a `.gitignore` containing
+`*`, so nothing here ever needs adding to yours. Under the token floor it writes
+nothing at all, not even a log.
 
-## Status — v0.4
+## Status — v0.4.1
 
 Complete. Runs itself once a day from a SessionStart hook, or on demand with
 `/contextlint`.
@@ -88,6 +100,23 @@ same tokens and keeps a copy you can put back.
 A proposal you decline goes in `.contextlint/ignore.json` as
 `[{ "rule": "<key from dossier candidates[].key>", "reason": "..." }]` and is not
 raised again.
+
+## Notes on the hook
+
+Hooks run in a non-interactive shell with no profile sourced, so an nvm-managed
+node is not on `PATH`. `hooks/contextlint-hook.sh` resolves a node itself —
+`PATH` first, then the usual install locations, then nvm's and volta's — using
+only shell builtins so it works even when `PATH` is bare, and skipping any node
+older than 18.3 (which lacks `util.parseArgs`). If it finds none it exits 0
+silently.
+
+Settings are read as the merge of `~/.claude/settings.json`,
+`<repo>/.claude/settings.json` and `settings.local.json`. `claude plugin install`
+writes to user scope by default, so reading only the project file reports zero
+plugins in almost every repo — and a user-level hook enforces things just as
+much as a project one. When an inventory does come back empty the dossier says
+so in `inventoryGaps`, because "no plugins listed" must never be read as "no
+plugin covers this rule".
 
 ## Why the hook is silent
 

@@ -52,6 +52,14 @@ Always-on is the last resort, not the default.
 2. **Read the dossier.** `.contextlint/dossier.json` in the target repo. It holds
    the candidate rules, the hook inventory, the deny list, and every enabled
    plugin with its version and skill descriptions.
+
+   **Check `inventoryGaps` first.** An empty inventory is not evidence that
+   nothing covers a rule. If it says no plugins resolved, you cannot judge the
+   MOVE — plugin bucket at all; if it says no hooks were found, you cannot judge
+   DELETE. Report the gap and classify the affected rules as KEEP rather than
+   reasoning from an absence. Treating "no plugins listed" as "no plugin covers
+   this" is the failure mode to avoid — it silently turns every plugin-covered
+   rule into a KEEP with a confident-sounding justification.
 3. **Read the always-on files themselves** — the dossier lists their paths, not
    their text. You need the surrounding context to judge a rule fairly.
 4. **Classify each candidate** into exactly one bucket (below).

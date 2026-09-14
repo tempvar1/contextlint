@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/contextlint.js\" --if-due",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/contextlint-hook.sh\"",
             "timeout": 15
           }
         ]

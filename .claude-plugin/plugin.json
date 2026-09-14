@@ -1,5 +1,6 @@
 {
   "name": "contextlint",
-  "version": "0.4.0",
-  "description": "Keeps a project's always-on Claude instructions from growing without bound - measures, detects new rules, proposes where each belongs"
+  "version": "0.4.1",
+  "description": "Keeps a project's always-on Claude instructions from growing without bound - measures, detects new rules, proposes where each belongs",
+  "author": { "name": "tempvar1" }
 }

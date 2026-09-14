@@ -1,0 +1,14 @@
+{
+  "name": "contextlint",
+  "owner": {
+    "name": "tempvar1"
+  },
+  "plugins": [
+    {
+      "name": "contextlint",
+      "source": ".",
+      "description": "Keeps a project's always-on Claude instructions from growing without bound"
+    }
+  ],
+  "description": "contextlint - keeps a project's always-on Claude instructions from growing without bound"
+}

@@ -1,11 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, mkdirSync, existsSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { measure, estimateTokens, sectionsByLine, findCandidates, readHooks, readPlugins, ruleKey, isDue } from '../bin/contextlint.js'
+import { measure, estimateTokens, sectionsByLine, findCandidates, readHooks, readPlugins, ruleKey, isDue, readSettings } from '../bin/contextlint.js'
 
 const BIN = fileURLToPath(new URL('../bin/contextlint.js', import.meta.url))
 
@@ -55,16 +55,17 @@ test('findCandidates treats the first run as a full audit', () => {
 
 test('readHooks lists every matcher and the deny list, without judging them', () => {
   const dir = mkdtempSync(join(tmpdir(), 'contextlint-'))
+  const cfg = mkdtempSync(join(tmpdir(), 'contextlint-cfg-'))
   mkdirSync(join(dir, '.claude'))
   writeFileSync(join(dir, '.claude/settings.json'), JSON.stringify({
     hooks: { PreToolUse: [{ matcher: 'Bash(git commit*)', hooks: [{ type: 'command', command: 'guard.sh' }] }] },
     permissions: { deny: ['Read(.env)'] },
   }))
 
-  assert.deepEqual(readHooks(dir), {
-    hooks: [{ event: 'PreToolUse', matcher: 'Bash(git commit*)', commands: ['guard.sh'] }],
-    deny: ['Read(.env)'],
-  })
+  const { hooks, deny } = readHooks(dir, cfg)
+
+  assert.deepEqual(hooks, [{ event: 'PreToolUse', matcher: 'Bash(git commit*)', commands: ['guard.sh'] }])
+  assert.deepEqual(deny, ['Read(.env)'])
 })
 
 test('readPlugins resolves enabled plugins to their installed version and skills', () => {
@@ -168,4 +169,61 @@ test('--if-due stays silent on a second run inside the interval', () => {
 
   assert.match(first, /^contextlint: \d+ new rules? in the always-on block/, 'first run is over the floor and has no history, so it reports')
   assert.equal(second, '', 'second run is inside the 24h interval')
+})
+
+test('readSettings merges user, project and local, project winning on enabledPlugins', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'contextlint-'))
+  const cfg = mkdtempSync(join(tmpdir(), 'contextlint-cfg-'))
+  writeFileSync(join(cfg, 'settings.json'), JSON.stringify({
+    enabledPlugins: { 'a@m': true, 'b@m': true },
+    hooks: { PreToolUse: [{ matcher: 'user', hooks: [{ command: 'u' }] }] },
+    permissions: { deny: ['Read(.env)'] },
+  }))
+  mkdirSync(join(dir, '.claude'))
+  writeFileSync(join(dir, '.claude/settings.json'), JSON.stringify({
+    enabledPlugins: { 'b@m': false },
+    hooks: { PreToolUse: [{ matcher: 'project', hooks: [{ command: 'p' }] }] },
+    permissions: { deny: ['Read(.env)', 'Write(/etc/**)'] },
+  }))
+
+  const merged = readSettings(dir, cfg)
+
+  assert.deepEqual(merged.enabledPlugins, { 'a@m': true, 'b@m': false }, 'project scope wins')
+  assert.deepEqual(merged.hooks.PreToolUse.map((h) => h.matcher), ['user', 'project'], 'hooks accumulate, both fire')
+  assert.deepEqual(merged.deny, ['Read(.env)', 'Write(/etc/**)'], 'deny rules accumulate and dedupe')
+})
+
+test('readPlugins finds a user-scope plugin with nothing in the project settings', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'contextlint-'))
+  const cfg = mkdtempSync(join(tmpdir(), 'contextlint-cfg-'))
+  const installPath = join(cfg, 'plug', '1.0.0')
+  mkdirSync(installPath, { recursive: true })
+  mkdirSync(join(cfg, 'plugins'), { recursive: true })
+  writeFileSync(join(cfg, 'plugins/installed_plugins.json'), JSON.stringify({
+    plugins: { 'plug@market': [{ installPath, version: '1.0.0' }] },
+  }))
+  // User scope only — this is what `claude plugin install` produces by default.
+  writeFileSync(join(cfg, 'settings.json'), JSON.stringify({ enabledPlugins: { 'plug@market': true } }))
+  mkdirSync(join(dir, '.claude'))
+  writeFileSync(join(dir, '.claude/settings.json'), JSON.stringify({ hooks: {}, permissions: {} }))
+
+  assert.deepEqual(readPlugins(dir, cfg).map((p) => p.version), ['1.0.0'])
+})
+
+test('under the floor it writes no state directory at all', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'contextlint-'))
+  writeFileSync(join(dir, 'CLAUDE.md'), '# Tiny\n\n- one rule\n')
+
+  execFileSync('node', [BIN, dir], { encoding: 'utf8' })
+
+  assert.equal(existsSync(join(dir, '.contextlint')), false, 'a tool that stays out of the way leaves nothing behind')
+})
+
+test('the state directory ignores itself when it is created', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'contextlint-'))
+  writeFileSync(join(dir, 'CLAUDE.md'), '# Rules\n\n' + Array.from({ length: 120 }, (_, i) => `- rule ${i}: padded out with enough words to carry this fixture clear of the 1,500-token floor`).join('\n'))
+
+  execFileSync('node', [BIN, dir], { encoding: 'utf8' })
+
+  assert.equal(readFileSync(join(dir, '.contextlint/.gitignore'), 'utf8'), '*\n')
 })
